@@ -10,3 +10,7 @@ CLAUDE.md
 # For later, if we add build tools
 node_modules/
 dist/
+
+# Old single-file versions, kept locally only
+flight-sim.html
+globe-trotter.html

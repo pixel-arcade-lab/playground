@@ -1,98 +1,72 @@
-// The jet: its 3D model, and how it flies.
+// The planes you can choose, and how they fly.
+// The 3D models live in assets/planes/; this file holds the handling settings and the flight code.
 //
 // How the controls work ("mouse aim", like War Thunder):
 //   The mouse points at a direction in the world (the aim circle on screen).
 //   An autopilot turns the plane toward that direction by itself: it banks (tilts the wings) and pulls
 //   the nose round, the way a real pilot turns. So the player only says WHERE to go, never HOW.
 import * as THREE from 'three';
+import { createJetModel } from './assets/planes/jet.js';
+import { createYakModel } from './assets/planes/yak.js';
 
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
-// ---------- How the plane handles (change these to tune the feel) ----------
-export const FLIGHT = {
-  maxPitchRate: 1.5,     // how fast the nose can go up/down (radians per second)
-  maxRollRate: 3.2,      // how fast the plane can tilt its wings
-  maxYawRate: 0.35,      // small side-to-side nose movement (rudder)
-  response: 6,           // how quickly the controls react (higher = snappier)
-  pitchGain: 2.2,        // how hard the autopilot pulls toward the aim
-  rollGain: 2.5,         // how hard the autopilot banks toward the aim
-  aggressiveAngle: 0.25, // radians (~15°): when the aim is further off than this, bank hard into the turn
-  minSpeed: 55,          // metres per second (about 200 km/h)
-  maxSpeed: 330,
-  boostExtra: 110,       // extra speed while boosting
+// ---------- The planes (change these numbers to tune the feel) ----------
+// Speeds are in metres per second (× 3.6 = km/h).
+export const PLANE_TYPES = {
+  yak: {
+    name: 'Yak',
+    about: 'Soviet propeller trainer. Slow and gentle, made for sightseeing.',
+    createModel: createYakModel,
+    engine: 'prop',                 // which engine sound
+    camera: { distance: 15, height: 3.2 },
+    flight: {
+      maxPitchRate: 0.95,   // how fast the nose can go up/down (radians per second)
+      maxRollRate: 2.2,     // how fast the plane can tilt its wings
+      maxYawRate: 0.3,      // small side-to-side nose movement (rudder)
+      response: 4.5,        // how quickly the controls react (higher = snappier)
+      pitchGain: 2.2,       // how hard the autopilot pulls toward the aim
+      rollGain: 2.5,        // how hard the autopilot banks toward the aim
+      aggressiveAngle: 0.25, // radians (~15°): when the aim is further off than this, bank hard into the turn
+      slowSpeed: 28,        // speed at 0% throttle (~100 km/h)
+      fastSpeed: 64,        // speed at 100% throttle (~230 km/h). 50% throttle ≈ 46 m/s ≈ 165 km/h
+      minSpeed: 24,
+      maxSpeed: 80,
+      boostExtra: 14,       // extra speed while holding the left button (~50 km/h)
+      climbDrag: 14,        // how much climbing slows you down (and diving speeds you up)
+      takeoffAccel: 4.5,    // speed gained per second on the runway
+      rotateSpeed: 30,      // lifts off at this speed (~108 km/h)
+      landingSpeed: 42,     // must be slower than this to land (~150 km/h)
+      brake: 5,             // speed lost per second after landing
+    },
+  },
+  jet: {
+    name: 'Jet',
+    about: 'Small jet. A little faster, with an afterburner boost.',
+    createModel: createJetModel,
+    engine: 'jet',
+    camera: { distance: 17, height: 3.4 },
+    flight: {
+      maxPitchRate: 1.15,
+      maxRollRate: 2.8,
+      maxYawRate: 0.32,
+      response: 5,
+      pitchGain: 2.2,
+      rollGain: 2.5,
+      aggressiveAngle: 0.25,
+      slowSpeed: 32,        // ~115 km/h
+      fastSpeed: 80,        // ~290 km/h. 50% throttle ≈ 56 m/s ≈ 200 km/h
+      minSpeed: 28,
+      maxSpeed: 100,
+      boostExtra: 30,       // ~110 km/h extra
+      climbDrag: 16,
+      takeoffAccel: 6,
+      rotateSpeed: 38,      // ~137 km/h
+      landingSpeed: 55,     // ~198 km/h
+      brake: 6,
+    },
+  },
 };
-
-// ---------- 3D model ----------
-const mat = (col, extra = {}) => new THREE.MeshStandardMaterial({ color: col, flatShading: true, roughness: 0.6, metalness: 0.2, ...extra });
-
-// A flat shape with some thickness (wings, tail fins)
-function slab(points, depth, m) {
-  const sh = new THREE.Shape();
-  sh.moveTo(points[0][0], points[0][1]);
-  for (let i = 1; i < points.length; i++) sh.lineTo(points[i][0], points[i][1]);
-  sh.closePath();
-  const geo = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false });
-  geo.translate(0, 0, -depth / 2);
-  return new THREE.Mesh(geo, m);
-}
-
-// The jet points along -z (its nose), with +y up and +x to its right
-export function createJetModel() {
-  const jet = new THREE.Group();
-  const body = mat('#8d97a5'), bodyDS = mat('#8d97a5', { side: THREE.DoubleSide }), dark = mat('#3b414b');
-  const accent = mat('#c8513b', { side: THREE.DoubleSide });
-  const glass = mat('#1c2a3a', { roughness: 0.15, metalness: 0.6, emissive: '#3a1d12' });
-
-  const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 0.9, 9, 10), body);
-  fuselage.rotation.x = Math.PI / 2;
-  jet.add(fuselage);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.9, 3.5, 10), body);
-  nose.rotation.x = -Math.PI / 2;
-  nose.position.z = -6.25;
-  jet.add(nose);
-  const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.8, 12, 8), glass);
-  canopy.scale.set(1, 0.8, 2.4);
-  canopy.position.set(0, 0.75, -2.8);
-  jet.add(canopy);
-  for (const s of [1, -1]) {
-    const wing = slab([[0.7 * s, -2.4], [6.4 * s, 2.0], [6.4 * s, 3.0], [0.7 * s, 3.4]], 0.25, bodyDS);
-    wing.geometry.rotateX(Math.PI / 2); wing.position.y = -0.25; jet.add(wing);
-    const tailWing = slab([[0.6 * s, 3.0], [2.9 * s, 4.6], [2.9 * s, 5.2], [0.6 * s, 5.0]], 0.18, bodyDS);
-    tailWing.geometry.rotateX(Math.PI / 2); tailWing.position.y = 0.1; jet.add(tailWing);
-    const fin = slab([[3.0, 0], [4.7, 2.8], [5.3, 2.8], [5.0, 0]], 0.16, accent);
-    fin.geometry.rotateY(-Math.PI / 2); fin.position.set(0.65 * s, 0.6, 0); fin.rotation.z = -0.3 * s; jet.add(fin);
-    const intake = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1, 3), dark);
-    intake.position.set(1.1 * s, -0.2, -1); jet.add(intake);
-  }
-  const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.8, 1, 12), dark);
-  nozzle.rotation.x = Math.PI / 2;
-  nozzle.position.z = 4.9;
-  jet.add(nozzle);
-
-  // Engine flame (an outer glow and a bright core). Its length follows the throttle.
-  const flameGeo = new THREE.ConeGeometry(0.75, 4, 12, 1, true);
-  flameGeo.translate(0, 2, 0);
-  const flame = new THREE.Mesh(flameGeo, new THREE.MeshBasicMaterial({ color: '#ff9d4d', transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-  flame.rotation.x = Math.PI / 2;
-  flame.position.z = 5.3;
-  jet.add(flame);
-  const coreGeo = new THREE.ConeGeometry(0.42, 3, 10, 1, true);
-  coreGeo.translate(0, 1.5, 0);
-  const flameCore = new THREE.Mesh(coreGeo, new THREE.MeshBasicMaterial({ color: '#fff2c4', transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-  flameCore.rotation.x = Math.PI / 2;
-  flameCore.position.z = 5.3;
-  jet.add(flameCore);
-
-  // Show the flame for a given power (0 = idle, 1 = full, more with boost)
-  function setFlame(power) {
-    const len = 0.55 + power * 1.5 + Math.random() * 0.12;
-    flame.scale.set(1, len, 1);
-    flameCore.scale.set(1, len * 0.7, 1);
-    flame.material.opacity = 0.45 + Math.min(power, 1) * 0.45;
-  }
-
-  return { mesh: jet, setFlame };
-}
 
 // ---------- Flight ----------
 const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
@@ -109,17 +83,19 @@ export function createFlight() {
     pos: new THREE.Vector3(),
     q: new THREE.Quaternion(),      // which way the plane is turned (its "attitude")
     fwd: new THREE.Vector3(0, 0, -1),
-    speed: 150,                     // metres per second
-    throttle: 0.6,                  // 0..1
+    speed: 45,                      // metres per second
+    throttle: 0.5,                  // 0..1
     rates: { pitch: 0, roll: 0, yaw: 0 },
+    onGround: false,
+    rolling: null,                  // on the ground: 'takeoff' (speeding up), 'landing' (braking) or null (parked)
   };
-
+  let F = PLANE_TYPES.yak.flight;   // settings of the chosen plane
   let turnSide = 1;   // which way to turn when the aim is behind us (remembered, so it doesn't flip back and forth)
+
+  const cruise = (throttle) => F.slowSpeed + throttle * (F.fastSpeed - F.slowSpeed);
 
   // aimDir: the world direction the player is pointing at. boost: true while holding the left button.
   function step(dt, aimDir, boost) {
-    const F = FLIGHT;
-
     // 0. If the aim is behind the plane, don't loop over the top (that loses lots of height).
     //    Instead aim at a point to the side first, so the plane makes a normal level banked turn.
     let target = aimDir;
@@ -167,24 +143,66 @@ export function createFlight() {
     state.q.normalize();
     state.fwd.set(0, 0, -1).applyQuaternion(state.q);
 
-    // 5. Speed: throttle pushes toward a target speed; climbing slows you, diving speeds you up
-    const targetSpeed = 80 + state.throttle * 170 + (boost ? F.boostExtra : 0);
-    state.speed += (targetSpeed - state.speed) * dt * (boost ? 1.2 : 0.6);
-    state.speed -= state.fwd.y * 35 * dt;
+    // 5. Speed: throttle pushes toward a cruise speed; climbing slows you, diving speeds you up
+    const targetSpeed = cruise(state.throttle) + (boost ? F.boostExtra : 0);
+    state.speed += (targetSpeed - state.speed) * dt * (boost ? 1.0 : 0.5);
+    state.speed -= state.fwd.y * F.climbDrag * dt;
     state.speed = clamp(state.speed, F.minSpeed, F.maxSpeed + (boost ? F.boostExtra : 0));
 
     // 6. Move forward
     state.pos.addScaledVector(state.fwd, state.speed * dt);
   }
 
-  function reset(pos, heading) {
+  // ---------- On the ground ----------
+  // The plane rolls straight ahead, wings level, wheels on the ground. groundAt(x, z) gives the ground height.
+  // Returns 'liftoff' when it leaves the ground, 'stopped' when it has braked to a stop.
+  function groundStep(dt, groundAt, gearHeight) {
+    if (state.rolling === 'takeoff') state.speed += F.takeoffAccel * dt;
+    else state.speed = Math.max(0, state.speed - F.brake * dt);
+    flatFwd.set(state.fwd.x, 0, state.fwd.z).normalize();
+    state.q.setFromAxisAngle(AY, Math.atan2(-flatFwd.x, -flatFwd.z));
+    if (state.rolling === 'takeoff') {   // lift the nose a little just before leaving the ground
+      const lift = clamp((state.speed - F.rotateSpeed * 0.75) / (F.rotateSpeed * 0.25), 0, 1) * 0.1;
+      tmpQ.setFromAxisAngle(AX, lift); state.q.multiply(tmpQ);
+    }
+    state.fwd.set(0, 0, -1).applyQuaternion(state.q);
+    state.pos.x += flatFwd.x * state.speed * dt;
+    state.pos.z += flatFwd.z * state.speed * dt;
+    state.pos.y = groundAt(state.pos.x, state.pos.z) + gearHeight;
+    state.rates.pitch = state.rates.roll = state.rates.yaw = 0;
+    if (state.rolling === 'takeoff' && state.speed >= F.rotateSpeed) {
+      state.onGround = false; state.rolling = null;
+      return 'liftoff';
+    }
+    if (state.rolling === 'landing' && state.speed === 0) { state.rolling = null; return 'stopped'; }
+    return null;
+  }
+  function startTakeoff() { if (state.onGround) state.rolling = 'takeoff'; }
+  function touchdown() { state.onGround = true; state.rolling = 'landing'; }
+
+  // Is a touchdown right now gentle enough to count as a landing? (the caller checks it is on the runway)
+  function canLand() {
+    right.copy(AX).applyQuaternion(state.q);
+    return state.speed <= F.landingSpeed &&     // slow enough
+      state.fwd.y * state.speed > -6 &&          // sinking less than 6 m/s
+      state.fwd.y > -0.2 &&                      // nose not pointing down steeply
+      Math.abs(right.y) < 0.2;                   // wings nearly level
+  }
+
+  // Put the plane at pos, turned to heading. onGround: parked (speed 0) instead of flying.
+  function reset(pos, heading, onGround = false) {
     state.pos.copy(pos);
     state.q.setFromAxisAngle(AY, heading);
     state.fwd.set(0, 0, -1).applyQuaternion(state.q);
-    state.speed = 150;
-    state.throttle = 0.6;
+    state.throttle = 0.5;
+    state.speed = onGround ? 0 : cruise(state.throttle);
+    state.onGround = onGround;
+    state.rolling = null;
     state.rates.pitch = state.rates.roll = state.rates.yaw = 0;
   }
 
-  return { state, step, reset };
+  // Switch to the handling settings of another plane
+  function setType(type) { F = PLANE_TYPES[type].flight; }
+
+  return { state, step, groundStep, startTakeoff, touchdown, canLand, reset, setType, get settings() { return F; } };
 }
