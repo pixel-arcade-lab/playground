@@ -23,6 +23,16 @@
     .card .go { display: inline-block; margin-top: 6px; background: #ffc531; color: #1a1408; font-weight: 700; padding: 10px 22px; border-radius: 8px; }
     .keys { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; text-align: left; font-size: 14px; margin: 0 0 18px; }
     .keys b { background: #3a3150; padding: 2px 8px; border-radius: 4px; text-align: center; font-weight: 600; }
+    /* Plane choice */
+    .planes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0 0 16px; }
+    .pick {
+      background: #2c2440; color: #f3ecf7; border: 2px solid transparent; border-radius: 10px; padding: 10px;
+      font: inherit; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 3px;
+    }
+    .pick b { font-size: 16px; }
+    .pick span { font-size: 12px; color: #c9bcd4; line-height: 1.35; }
+    .pick:hover { background: #372d50; }
+    .pick.on { border-color: #ffc531; background: #3a3150; }
 
     /* Flight display */
     .hud { position: fixed; color: #fff; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,0.6); }
@@ -38,6 +48,11 @@
       top: 12px; left: 50%; transform: translateX(-50%); background: rgba(20, 12, 32, 0.5);
       padding: 4px 14px; border-radius: 8px; font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums;
     }
+    #ringInfo {
+      top: 12px; right: 14px; background: rgba(20, 12, 32, 0.5); padding: 6px 12px; border-radius: 8px;
+      font-size: 14px; font-variant-numeric: tabular-nums; text-align: right;
+    }
+    #ringInfo b { font-size: 18px; color: #ffd23f; }
     #hint { bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: 0.85; white-space: nowrap; }
     /* Aim circle: where you are pointing. Nose cross: where the plane points right now. */
     #aim { left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 2px solid rgba(255,255,255,0.9); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.3); }
@@ -45,10 +60,22 @@
     #nose::before, #nose::after { content: ""; position: absolute; background: #ffc531; box-shadow: 0 0 0 1px rgba(0,0,0,0.35); }
     #nose::before { left: 10px; top: 0; width: 2px; height: 22px; }
     #nose::after { top: 10px; left: 0; width: 22px; height: 2px; }
+    /* Marker for the next ring (sits on the screen edge when the ring is out of view) */
+    #ringMark { left: 0; top: 0; width: 0; height: 0; }
+    #ringMark i {
+      position: absolute; left: -9px; top: -9px; width: 14px; height: 14px; border: 2px solid #ffd23f;
+      transform: rotate(45deg); box-shadow: 0 0 0 1px rgba(0,0,0,0.35);
+    }
+    #ringMark span { position: absolute; left: 14px; top: -9px; font-size: 12px; font-weight: 700; color: #ffd23f; white-space: nowrap; }
     #warn {
       top: 26%; left: 50%; transform: translateX(-50%); background: #c9302c; font-weight: 700;
       font-size: 22px; padding: 4px 16px; border-radius: 6px; text-shadow: none;
     }
+    #tip {
+      top: 34%; left: 50%; transform: translateX(-50%); background: rgba(20, 12, 32, 0.7); font-weight: 600;
+      font-size: 18px; padding: 8px 18px; border-radius: 8px; text-align: center; line-height: 1.4;
+    }
+    #tip small { display: block; font-size: 13px; font-weight: 400; color: #e6dcef; }
   </style>
 
   <!-- Tells the browser where to download Three.js from (fixed version, so it never changes under us) -->
@@ -60,8 +87,10 @@
   <div id="overlay">
     <div class="card">
       <h1 id="ovTitle">Sky Strike</h1>
-      <p id="ovText">Free flight over the island. Point with the mouse and the plane flies there.</p>
+      <p id="ovText">Take off from the runway and fly over the islands. Point with the mouse and the plane flies there.</p>
+      <div class="planes" id="planePick"></div>
       <div class="keys" id="ovKeys">
+        <b>Space</b><span>Take off (when on the runway)</span>
         <b>Move mouse</b><span>Point where you want to fly</span>
         <b>Wheel</b><span>Throttle up / down</span>
         <b>Hold left</b><span>Boost</span>
@@ -69,35 +98,39 @@
         <b>Esc</b><span>Pause</span>
         <b>N</b><span>Sound on / off</span>
       </div>
-      <span class="go" id="ovBtn">Click to fly</span>
+      <span class="go" id="ovBtn">Click to start</span>
     </div>
   </div>
 
   <div id="flightHud" hidden>
     <div class="hud" id="heading">N 000°</div>
+    <div class="hud" id="ringInfo">Rings <b id="ringCount">0 / 0</b><br><span id="ringTime"></span></div>
     <div class="hud" id="stats">
       <span>Speed</span><span><b id="spd">0</b> km/h</span>
       <span>Altitude</span><span><b id="alt">0</b> m</span>
       <span>Throttle</span><span id="thrText">60%</span>
       <div class="bar"><i id="thrBar"></i></div>
     </div>
+    <div class="hud" id="ringMark"><i></i><span id="ringDist"></span></div>
     <div class="hud" id="aim"></div>
     <div class="hud" id="nose"></div>
     <div class="hud" id="warn" hidden></div>
-    <div class="hud" id="hint">Mouse: steer · Wheel: throttle · Hold left: boost · Hold right: look around · Esc: pause</div>
+    <div class="hud" id="tip" hidden></div>
+    <div class="hud" id="hint">Space: take off · Mouse: steer · Wheel: throttle · Hold left: boost · Hold right: look around · Esc: pause</div>
   </div>
 
   <script type="module">
     import * as THREE from 'three';
-    import { buildWorld, groundAt, glowTexture } from './world.js';
-    import { createJetModel, createFlight } from './plane.js';
+    import { buildWorld, groundAt, glowTexture, farFromLand, isOnRunway, isNearRunway, RUNWAY, VILLAGE } from './world.js';
+    import { PLANE_TYPES, createFlight } from './plane.js';
+    import { createLife } from './life.js';
+    import { buildAirfield } from './airfield.js';
+    import { createRings } from './rings.js';
     import * as sound from './sound.js';
 
     // ---------- Settings ----------
     const MOUSE_SENSITIVITY = 0.0022;   // how far the aim moves per pixel of mouse movement
-    const CAMERA_DISTANCE = 24;         // metres behind the plane
-    const CAMERA_HEIGHT = 4.5;          // metres above the plane
-    const START = { x: 0, z: 2300, height: 220 };
+    const RUNWAY_HEADING = Math.atan2(-RUNWAY.dir.x, -RUNWAY.dir.z);   // the take-off direction as an angle
 
     const $ = (id) => document.getElementById(id);
     const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -108,13 +141,42 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.prepend(renderer.domElement);
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(66, window.innerWidth / window.innerHeight, 1, 7500);
+    const camera = new THREE.PerspectiveCamera(64, window.innerWidth / window.innerHeight, 0.5, 12000);
     const world = buildWorld(scene);
+    const life = createLife(scene);
+    buildAirfield(scene);
+    const rings = createRings(scene, world.waterfall);
 
-    const jet = createJetModel();
-    scene.add(jet.mesh);
+    // Both planes are built once; only the chosen one is shown
+    const models = {};
+    for (const [id, type] of Object.entries(PLANE_TYPES)) {
+      models[id] = type.createModel();
+      models[id].mesh.visible = false;
+      scene.add(models[id].mesh);
+    }
+    let planeId = 'yak';
+    let model = models[planeId];   // the plane model being flown
     const flight = createFlight();
     const S = flight.state;
+
+    // Plane choice buttons on the start screen
+    for (const [id, type] of Object.entries(PLANE_TYPES)) {
+      const b = document.createElement('button');
+      b.className = 'pick';
+      b.dataset.plane = id;
+      b.innerHTML = `<b>${type.name}</b><span>${type.about}</span>`;
+      b.addEventListener('click', (e) => { e.stopPropagation(); choosePlane(id); });
+      $('planePick').append(b);
+    }
+    function choosePlane(id) {
+      planeId = id;
+      for (const m of Object.values(models)) m.mesh.visible = false;
+      model = models[id];
+      flight.setType(id);
+      sound.setEngine(PLANE_TYPES[id].engine);
+      for (const b of $('planePick').children) b.classList.toggle('on', b.dataset.plane === id);
+      reset();
+    }
 
     // ---------- Particles (sparks, smoke, engine glow) ----------
     const glowTex = glowTexture([[0, 'rgba(255,255,255,1)'], [0.25, 'rgba(255,255,255,.75)'], [1, 'rgba(255,255,255,0)']]);
@@ -161,37 +223,51 @@
     }
 
     // ---------- Game state ----------
-    // mode: 'menu' (start screen), 'flying', 'paused', 'crashed'
+    // mode: 'menu' (start screen), 'flying' (in control, on the ground or in the air), 'paused', 'crashed'
     let mode = 'menu';
     const aim = { yaw: 0, pitch: 0 };          // where the mouse points (angles)
     const look = { yaw: 0, pitch: 0 };         // extra camera turn while holding the right button
     let boost = false;
     let looking = false;
     let soundOff = false;
+    let tipText = '', tipUntil = 0;            // short messages in the middle of the screen
+    let clock0 = 0;                            // seconds since the page loaded
+    let climbedAway = true;                    // false just after lift-off, until a few metres up
     const aimDir = new THREE.Vector3();
+    const prevPos = new THREE.Vector3();
 
     // Turn two angles into a direction (yaw 0 = straight ahead toward -z)
     function dirFrom(yaw, pitch, out) {
       return out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     }
+    const headingOf = (fwd) => Math.atan2(-fwd.x, -fwd.z);
 
+    // Park the plane at the start of the runway, ready for take-off
     function reset() {
-      flight.reset(new THREE.Vector3(START.x, groundAt(START.x, START.z) + START.height, START.z), 0);
-      aim.yaw = 0; aim.pitch = 0;
+      const startAlong = -RUNWAY.halfLen + 25;
+      const x = RUNWAY.x + RUNWAY.dir.x * startAlong, z = RUNWAY.z + RUNWAY.dir.z * startAlong;
+      flight.reset(new THREE.Vector3(x, groundAt(x, z) + model.gearHeight, z), RUNWAY_HEADING, true);
+      aim.yaw = RUNWAY_HEADING; aim.pitch = -0.06;
       look.yaw = 0; look.pitch = 0;
       boost = false;
-      jet.mesh.visible = true;
-      jet.mesh.position.copy(S.pos);
-      jet.mesh.quaternion.copy(S.q);
+      model.mesh.visible = true;
+      model.setGear(true);
+      model.mesh.position.copy(S.pos);
+      model.mesh.quaternion.copy(S.q);
+      prevPos.copy(S.pos);
+      rings.reset();
       updateThrottleUI();
     }
+    function showTip(html, seconds) { tipText = html; tipUntil = clock0 + seconds; }
 
     // ---------- Screens ----------
-    function showOverlay(title, text, button, showKeys) {
+    // canPick: show the plane choice (only on the ground screens, not when paused in the air)
+    function showOverlay(title, text, button, showKeys, canPick) {
       $('ovTitle').textContent = title;
       $('ovText').textContent = text;
       $('ovBtn').textContent = button;
       $('ovKeys').hidden = !showKeys;
+      $('planePick').hidden = !canPick;
       $('overlay').hidden = false;
       $('flightHud').hidden = true;
     }
@@ -214,25 +290,25 @@
       } else if (mode === 'flying') {
         mode = 'paused';
         boost = false; looking = false;
-        showOverlay('Paused', 'Your plane is waiting in the air.', 'Click to continue', true);
+        showOverlay('Paused', S.onGround ? 'Your plane is waiting on the runway.' : 'Your plane is waiting in the air.', 'Click to continue', true, false);
       }
     });
 
-    // ---------- Mouse controls (no keyboard flying) ----------
+    // ---------- Controls: mouse for flying, Space only for take-off ----------
     document.addEventListener('mousemove', (e) => {
       if (mode !== 'flying') return;
       const dx = e.movementX * MOUSE_SENSITIVITY, dy = e.movementY * MOUSE_SENSITIVITY;
       if (looking) {
         look.yaw -= dx;
         look.pitch = clamp(look.pitch - dy, -1.2, 1.2);
-      } else {
+      } else if (!S.onGround) {                          // on the ground the plane just rolls straight
         aim.yaw -= dx;
         aim.pitch = clamp(aim.pitch - dy, -1.3, 1.3);   // never straight up/down, to keep turning smooth
       }
     });
     document.addEventListener('mousedown', (e) => {
       if (mode !== 'flying') return;
-      if (e.button === 0) boost = true;
+      if (e.button === 0 && !S.onGround) boost = true;
       if (e.button === 2) looking = true;
     });
     document.addEventListener('mouseup', (e) => {
@@ -247,6 +323,13 @@
     });
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyN' && !e.repeat) soundOff = sound.toggleMute();
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (mode === 'flying' && S.onGround && S.rolling !== 'takeoff') {
+          flight.startTakeoff();
+          showTip('Taking off…', 2);
+        }
+      }
     });
 
     // ---------- Display ----------
@@ -263,10 +346,26 @@
       el.style.display = behind ? 'none' : 'block';
       el.style.transform = `translate(${(proj.x + 1) / 2 * window.innerWidth}px, ${(1 - proj.y) / 2 * window.innerHeight}px)`;
     }
+    // Like placeOnScreen, but when the point is off screen or behind, stick to the screen edge in its direction
+    function placeOnEdge(el, worldPos) {
+      proj.copy(worldPos).project(camera);
+      let x = proj.x, y = proj.y;
+      const behind = proj.z > 1;
+      if (behind) { x = -x; y = -y; }
+      const m = Math.max(Math.abs(x) / 0.92, Math.abs(y) / 0.85);
+      if (behind || m > 1) {
+        if (m < 1e-3) { x = 0; y = -0.85; } else { x /= m; y /= m; }
+      }
+      el.style.transform = `translate(${(x + 1) / 2 * window.innerWidth}px, ${(1 - y) / 2 * window.innerHeight}px)`;
+    }
     const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const kmh = (ms) => Math.round(ms * 3.6);
+    const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
     function updateHud() {
-      $('spd').textContent = Math.round(S.speed * 3.6);
-      $('alt').textContent = Math.max(0, Math.round(S.pos.y));
+      const F = flight.settings;
+      $('spd').textContent = kmh(S.speed);
+      const ground = groundAt(S.pos.x, S.pos.z);
+      $('alt').textContent = S.onGround ? 0 : Math.max(0, Math.round(S.pos.y));
       let deg = (Math.atan2(S.fwd.x, -S.fwd.z) * 180) / Math.PI;
       if (deg < 0) deg += 360;
       $('heading').textContent = `${COMPASS[Math.round(deg / 45) % 8]} ${String(Math.round(deg) % 360).padStart(3, '0')}°`;
@@ -274,16 +373,38 @@
       placeOnScreen($('aim'), tv.copy(S.pos).addScaledVector(aimDir, 1500));
       placeOnScreen($('nose'), tv.copy(S.pos).addScaledVector(S.fwd, 1500));
 
-      // Warnings: about to hit the ground, or flying away from the island
-      const clearance = S.pos.y - groundAt(S.pos.x, S.pos.z);
-      const ahead = tv.copy(S.pos).addScaledVector(S.fwd, S.speed * 2);   // where we'll be in 2 seconds
-      const aheadClear = ahead.y - groundAt(ahead.x, ahead.z);
-      const sinking = S.fwd.y * S.speed;
+      // Rings
+      $('ringCount').textContent = `${rings.state.next} / ${rings.state.total}`;
+      $('ringTime').textContent = rings.state.running ? mmss(rings.state.time) : 'Fly through the yellow ring';
+      const target = rings.nextCentre();
+      placeOnEdge($('ringMark'), target);
+      $('ringDist').textContent = `${Math.round(target.distanceTo(S.pos))} m`;
+
+      // Warnings and tips
+      const clearance = S.pos.y - ground;
+      const landingZone = !S.onGround && isNearRunway(S.pos.x, S.pos.z) && clearance < 250;
       let msg = '';
-      if (aheadClear < 15 || (sinking < 0 && clearance / -sinking < 3)) msg = 'PULL UP!';
-      else if (Math.hypot(S.pos.x, S.pos.z) > 3600) msg = 'Turn back to the island';
+      if (!S.onGround) {
+        const ahead = tv.copy(S.pos).addScaledVector(S.fwd, S.speed * 2.5);   // where we'll be in 2.5 seconds
+        const aheadClear = ahead.y - groundAt(ahead.x, ahead.z);
+        const sinking = S.fwd.y * S.speed;
+        const lowDanger = aheadClear < 12 || (sinking < 0 && clearance / -sinking < 3);
+        if (lowDanger && !(landingZone && S.speed <= F.landingSpeed)) msg = 'PULL UP!';
+        else if (landingZone && clearance < 60 && S.speed > F.landingSpeed) msg = 'Too fast to land';
+        else if (farFromLand(S.pos.x, S.pos.z)) msg = 'Turn back to the islands';
+      }
       $('warn').hidden = !msg;
       $('warn').textContent = msg;
+
+      let tip = clock0 < tipUntil ? tipText : '';
+      if (!tip && S.onGround && S.rolling === null) {
+        tip = S.speed === 0 && tipText.startsWith('Landed') ? tipText : 'Press <b>Space</b> to take off';
+      }
+      if (!tip && landingZone && clearance < 200) {
+        tip = `Landing: under ${kmh(F.landingSpeed)} km/h, wings level, gentle descent<small>Scroll down to lower the throttle</small>`;
+      }
+      $('tip').hidden = !tip;
+      if (tip && $('tip').innerHTML !== tip) $('tip').innerHTML = tip;
     }
 
     // ---------- Camera ----------
@@ -298,8 +419,9 @@
       }
       dirFrom(aim.yaw + look.yaw, clamp(aim.pitch + look.pitch, -1.4, 1.4), camDir);
       // Camera sits behind the plane, along the direction you are looking, and keeps the horizon level
-      camera.position.copy(S.pos).addScaledVector(camDir, -CAMERA_DISTANCE);
-      camera.position.y += CAMERA_HEIGHT;
+      const cam = PLANE_TYPES[planeId].camera;
+      camera.position.copy(S.pos).addScaledVector(camDir, -cam.distance);
+      camera.position.y += cam.height;
       const floor = groundAt(camera.position.x, camera.position.z) + 3;
       if (camera.position.y < floor) camera.position.y = floor;
       camera.up.set(0, 1, 0);
@@ -307,17 +429,17 @@
       lookTarget.y += 2;
       camera.lookAt(lookTarget);
       // Slightly wider view at high speed, for a feeling of speed
-      const fov = 64 + clamp((S.speed - 90) / 250, 0, 1) * 14;
+      const F = flight.settings;
+      const fov = 62 + clamp((S.speed - F.slowSpeed) / (F.maxSpeed - F.slowSpeed), 0, 1) * 10;
       if (Math.abs(camera.fov - fov) > 0.05) {
         camera.fov += (fov - camera.fov) * Math.min(1, dt * 3);
         camera.updateProjectionMatrix();
       }
     }
     // On the start screen: slowly circle around the plane
-    let t = 0;
     function menuCamera() {
-      const a = t * 0.25;
-      camera.position.set(S.pos.x + Math.sin(a) * 30, S.pos.y + 7, S.pos.z + Math.cos(a) * 30);
+      const a = clock0 * 0.25;
+      camera.position.set(S.pos.x + Math.sin(a) * 16, S.pos.y + 3, S.pos.z + Math.cos(a) * 16);
       camera.up.set(0, 1, 0);
       camera.lookAt(S.pos);
     }
@@ -326,11 +448,59 @@
     function crash() {
       mode = 'crashed';
       explode(S.pos, 2.2);
-      jet.mesh.visible = false;
+      model.mesh.visible = false;
       $('warn').hidden = true;
+      $('tip').hidden = true;
       boost = false; looking = false;
       document.exitPointerLock();
-      setTimeout(() => showOverlay('You crashed', 'Watch the PULL UP warning, and point the circle above the hills.', 'Click to fly again', false), 1500);
+      const onRunway = isOnRunway(S.pos.x, S.pos.z);
+      const why = onRunway
+        ? `Landing too hard. Come in slower than ${kmh(flight.settings.landingSpeed)} km/h, with the wings level and a gentle descent.`
+        : 'Watch the PULL UP warning, and point the circle above the hills. You can only land on the runway.';
+      setTimeout(() => showOverlay('You crashed', why, 'Click to try again', false, true), 1500);
+    }
+
+    // ---------- Flying, rolling on the ground, landing ----------
+    function updatePlane(dt) {
+      const F = flight.settings;
+      if (S.onGround) {
+        aim.yaw = headingOf(S.fwd); aim.pitch = -0.06;     // camera looks straight down the runway
+        const event = flight.groundStep(dt, groundAt, model.gearHeight);
+        if (event === 'liftoff') {
+          aim.yaw = headingOf(S.fwd); aim.pitch = 0.2;     // climb away gently; the mouse takes over from here
+          climbedAway = false;
+          showTip('Airborne! Now steer with the mouse', 3);
+        }
+        if (event === 'stopped') showTip('Landed! Press <b>Space</b> to take off again', 1e9);
+      } else {
+        flight.step(dt, aimDir, boost);
+        const clearance = S.pos.y - groundAt(S.pos.x, S.pos.z);
+        model.setGear(clearance < 80 && S.speed < F.landingSpeed + 6);   // jet: wheels come down when low and slow
+        if (clearance > model.gearHeight + 3) climbedAway = true;
+        if (!climbedAway) {
+          // Just after lift-off the wheels are still almost on the runway: keep them from touching it again
+          S.pos.y = Math.max(S.pos.y, groundAt(S.pos.x, S.pos.z) + model.gearHeight + 0.2);
+        } else if (clearance < model.gearHeight + 0.15) {
+          if (isOnRunway(S.pos.x, S.pos.z) && flight.canLand()) {
+            flight.touchdown();
+            boost = false;
+            S.pos.y = groundAt(S.pos.x, S.pos.z) + model.gearHeight;
+            sound.playTouchdown();
+            showTip('Nice landing!', 2.5);
+          } else crash();
+        }
+      }
+      model.mesh.position.copy(S.pos);
+      model.mesh.quaternion.copy(S.q);
+
+      // Rings
+      const r = rings.update(dt, prevPos, S.pos);
+      if (r && r.event === 'ring') sound.playChime();
+      if (r && r.event === 'done') {
+        sound.playComplete();
+        showTip(`Course complete! Time ${mmss(r.time)}<small>The rings start again</small>`, 6);
+      }
+      prevPos.copy(S.pos);
     }
 
     // ---------- Main loop ----------
@@ -339,37 +509,36 @@
     function loop() {
       requestAnimationFrame(loop);
       const dt = Math.min(clock.getDelta(), 0.05);
-      t += dt;
+      clock0 += dt;
 
       dirFrom(aim.yaw, aim.pitch, aimDir);
-      if (mode === 'flying') {
-        flight.step(dt, aimDir, boost);
-        jet.mesh.position.copy(S.pos);
-        jet.mesh.quaternion.copy(S.q);
-        if (S.pos.y - groundAt(S.pos.x, S.pos.z) < 1.5) crash();
-      }
+      if (mode === 'flying') updatePlane(dt);
 
-      const power = S.throttle + (boost ? 0.6 : 0);
-      if (jet.mesh.visible) {
-        jet.setFlame(power);
-        // Hot exhaust trail while boosting
+      // Engine power: idle when parked, full during the take-off run
+      let power = S.throttle + (boost ? 0.6 : 0);
+      if (S.onGround) power = S.rolling === 'takeoff' ? 1 : 0.15;
+      if (model.mesh.visible) {
+        model.setPower(power, dt);
+        // Exhaust trail while boosting (hot sparks for the jet, light smoke for the propeller plane)
         trailT -= dt;
         if (mode === 'flying' && boost && trailT <= 0) {
           trailT = 0.03;
-          spawn(tv.set(0, 0, 6).applyQuaternion(S.q).add(S.pos), S.fwd.clone().multiplyScalar(S.speed * 0.85), 0.18, 2.2, 4, '#ffa860', true, 0.6);
+          spawn(tv.copy(model.exhaust).applyQuaternion(S.q).add(S.pos), S.fwd.clone().multiplyScalar(S.speed * 0.85), 0.2, 1.2, 2.6, model.exhaustColor, model.exhaustGlow, 0.55);
         }
       }
       updateParticles(dt);
-      sound.updateFlightSound(power, clamp(S.speed / 400, 0, 1), mode === 'flying' || mode === 'menu');
+      sound.updateFlightSound(power, clamp(S.speed / flight.settings.maxSpeed, 0, 1), mode === 'flying' || mode === 'menu');
 
       if (mode === 'menu') menuCamera();
       else if (mode !== 'crashed') updateCamera(dt);
       world.follow(camera.position);
+      world.update(dt);
+      life.update(dt, camera);
       if (mode === 'flying') updateHud();
       renderer.render(scene, camera);
     }
 
-    reset();
+    choosePlane(planeId);
     if (matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches) {
       $('ovText').textContent = 'This game needs a mouse. Please open it on a computer.';
     }
@@ -382,7 +551,7 @@
     });
 
     // Handy for testing from the browser console
-    window.flightSim = { flight, aim, get mode() { return mode; }, set mode(m) { mode = m; } };
+    window.flightSim = { flight, aim, camera, choosePlane, rings, VILLAGE, RUNWAY, get mode() { return mode; }, set mode(m) { mode = m; } };
   </script>
 </body>
 </html>
