@@ -1,0 +1,12 @@
+# Windows / macOS junk files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Claude working files: instructions and settings stay on this computer only
+CLAUDE.md
+.claude/
+
+# For later, if we add build tools
+node_modules/
+dist/

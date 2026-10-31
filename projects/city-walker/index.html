@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>City Walker</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font-family: system-ui, sans-serif; }
+    /* Draw the game at low resolution and scale it up with sharp, chunky pixels (retro look) */
+    canvas { display: block; image-rendering: pixelated; }
+
+    /* Start / pause screen */
+    #overlay {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: rgba(0, 0, 0, 0.45); color: #fff; cursor: pointer; z-index: 10;
+    }
+    #overlay.hidden { display: none; }
+    .panel { text-align: center; max-width: 380px; padding: 24px 28px; background: rgba(20, 24, 32, 0.92); border-radius: 12px; }
+    .panel h1 { margin: 0 0 4px; font-size: 28px; }
+    .panel h2 { margin: 0 0 6px; font-size: 15px; font-weight: 500; opacity: 0.75; }
+    .panel p { margin: 0 0 16px; opacity: 0.8; }
+    .keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; text-align: left; font-size: 14px; }
+    .keys b { background: #2c3443; padding: 2px 8px; border-radius: 4px; font-weight: 600; text-align: center; }
+
+    /* Status text in the corners */
+    #hud, #place {
+      position: fixed; color: #fff; font-size: 13px;
+      background: rgba(0, 0, 0, 0.4); padding: 6px 10px; border-radius: 6px; pointer-events: none;
+    }
+    #hud { left: 12px; bottom: 12px; }
+    #place { left: 12px; top: 12px; font-weight: 600; }
+
+    /* "Press E" prompt at doors */
+    #prompt {
+      position: fixed; left: 50%; bottom: 18%; transform: translateX(-50%);
+      color: #fff; font-size: 16px; background: rgba(15, 12, 20, 0.85); border: 1px solid #c8a24a;
+      padding: 8px 16px; border-radius: 8px; pointer-events: none; display: none; white-space: nowrap;
+    }
+    #prompt b { background: #c8a24a; color: #111; padding: 1px 8px; border-radius: 4px; margin-right: 6px; }
+
+    /* Small map in the top-right corner (above the pause screen, so it can be clicked while paused) */
+    #minimap {
+      position: fixed; right: 12px; top: 12px; z-index: 11; cursor: pointer;
+      border: 2px solid #c8a24a; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    #minimap-hint {
+      position: fixed; right: 12px; top: 192px; z-index: 11; color: #fff; font-size: 11px;
+      background: rgba(0,0,0,0.45); padding: 2px 6px; border-radius: 4px; pointer-events: none;
+    }
+    /* Big map */
+    #bigmap {
+      position: fixed; inset: 0; z-index: 12; display: none; flex-direction: column;
+      align-items: center; justify-content: center; background: rgba(0,0,0,0.7); color: #fff; cursor: pointer;
+    }
+    #bigmap.open { display: flex; }
+    #bigmap canvas { border: 3px solid #c8a24a; border-radius: 8px; }
+    #bigmap .legend { margin-top: 10px; font-size: 14px; opacity: 0.9; }
+    #bigmap .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; border: 1px solid #111; vertical-align: -1px; margin: 0 4px 0 12px; }
+
+    /* Black screen used for the "blink" when going through a door */
+    #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 5; }
+    #fade.on { opacity: 1; }
+  </style>
+
+  <!-- Tells the browser where to download Three.js from (fixed version, so it never changes under us) -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="overlay">
+    <div class="panel">
+      <h1>City Walker</h1>
+      <h2>Kyoto</h2>
+      <p>Click anywhere to start</p>
+      <div class="keys">
+        <b>W A S D</b><span>Move (the camera follows you)</span>
+        <b>Shift</b><span>Run</span>
+        <b>Space</b><span>Jump</span>
+        <b>E / Click</b><span>Go through a door</span>
+        <b>M</b><span>Open / close the big map</span>
+        <b>N</b><span>Sound on / off</span>
+        <b>Mouse</b><span>Turn the camera yourself</span>
+        <b>Wheel</b><span>Zoom in / out</span>
+        <b>Esc</b><span>Pause / free the mouse</span>
+      </div>
+    </div>
+  </div>
+  <div id="place"></div>
+  <div id="hud"></div>
+  <div id="prompt"></div>
+  <canvas id="minimap"></canvas>
+  <div id="minimap-hint">M = big map</div>
+  <div id="bigmap">
+    <canvas id="bigmap-canvas"></canvas>
+    <div class="legend">
+      <span class="dot" style="background:#f2c94c"></span>You can go inside
+      <span class="dot" style="background:#fff"></span>Place to visit
+      <span class="dot" style="background:#ff4d4d"></span>You
+      &nbsp;&nbsp;·&nbsp;&nbsp;Press M or click to close
+    </div>
+  </div>
+  <div id="fade"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { makeMaterials } from './textures.js';
+    import { buildKyoto } from './map.js';
+    import { buildRooms } from './rooms.js';
+    import { createCharacter } from './character.js';
+    import { createMinimap } from './minimap.js';
+    import * as sound from './sound.js';
+
+    // ---------- Settings (change these to tune how the game feels) ----------
+    const PIXEL_SCALE = 3;          // bigger = chunkier pixels (1 = normal sharp picture)
+    const WALK_SPEED = 4;           // metres per second
+    const RUN_SPEED = 8;
+    const JUMP_SPEED = 6.5;         // upward speed when jumping (about 1.2 m high)
+    const GRAVITY = 18;
+    const STEP_HEIGHT = 0.45;       // you walk up steps this high without jumping
+    const PLAYER_RADIUS = 0.35;     // how "wide" the player is, for wall checks
+    const PLAYER_HEIGHT = 1.9;
+    const MOUSE_SENSITIVITY = 0.0025;
+    const CAMERA_DISTANCE = 5;      // starting distance of the camera behind the character
+    const CAMERA_PITCH = 0.35;      // how far the camera looks down (radians, about 20°)
+    const CAMERA_FOLLOW = 2.5;      // how quickly the camera swings behind you while moving
+    const MOUSE_PAUSE = 0.8;        // seconds the camera waits after you use the mouse before following again
+
+    // ---------- Renderer and camera ----------
+    const renderer = new THREE.WebGLRenderer({ antialias: false });
+    renderer.setPixelRatio(1 / PIXEL_SCALE);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 500);
+
+    // ---------- All places (areas) you can be in ----------
+    // Each area has its own scene, its own walls ("solids"), and its own doors.
+    const M = makeMaterials();
+    const areas = { outdoor: buildKyoto(M), ...buildRooms(M) };
+    let area = areas.outdoor;
+
+    const character = createCharacter();
+    area.scene.add(character.root);
+    const minimap = createMinimap(areas.outdoor.mapInfo);
+
+    // ---------- Player state ----------
+    const player = {
+      pos: area.spawn.clone(),        // position of the character's feet
+      vel: new THREE.Vector3(),       // current speed in each direction
+      onGround: false,
+      groundY: 0,                     // height of the last ground we stood on (for the shadow)
+      facing: area.spawnFacing,       // which way the character faces (radians)
+    };
+
+    // Camera angles around the character
+    const view = { yaw: player.facing + Math.PI, pitch: CAMERA_PITCH, distance: CAMERA_DISTANCE };
+    let inputYaw = view.yaw;   // the "forward" direction used for W/A/S/D
+    let lastKeys = '';
+    let mouseIdle = 99;        // seconds since the mouse last moved the camera
+
+    const placeEl = document.getElementById('place');
+    const hud = document.getElementById('hud');
+    const promptEl = document.getElementById('prompt');
+    const fadeEl = document.getElementById('fade');
+    placeEl.textContent = area.name;
+
+    // ---------- Doors: prompt, blink, and move to another area ----------
+    let nearDoor = null;
+    let travelling = false;
+
+    function findNearDoor() {
+      let best = null;
+      let bestDist = Infinity;
+      for (const door of area.doors) {
+        if (Math.abs(player.pos.y - door.y) > 1.5) continue;
+        const dist = Math.hypot(player.pos.x - door.x, player.pos.z - door.z);
+        if (dist < door.radius && dist < bestDist) { best = door; bestDist = dist; }
+      }
+      return best;
+    }
+
+    function enterArea(to) {
+      area = areas[to.area];
+      area.scene.add(character.root);   // moves the character into the new scene
+      player.pos.set(...to.pos);
+      player.vel.set(0, 0, 0);
+      player.facing = to.facing;
+      player.onGround = true;
+      player.groundY = player.pos.y;
+      view.yaw = to.facing + Math.PI;   // camera starts behind the character
+      inputYaw = view.yaw;
+      lastKeys = '';
+      placeEl.textContent = area.name;
+    }
+
+    function useDoor() {
+      if (!nearDoor || travelling) return;
+      const to = nearDoor.to;
+      travelling = true;
+      if (nearDoor.sound === 'gate') sound.playGate();
+      else sound.playDoor();
+      promptEl.style.display = 'none';
+      fadeEl.classList.add('on');                 // screen goes black...
+      setTimeout(() => {
+        enterArea(to);                            // ...we move...
+        setTimeout(() => {
+          fadeEl.classList.remove('on');          // ...and the screen comes back
+          travelling = false;
+        }, 150);
+      }, 280);
+    }
+
+    // ---------- Mouse: capture it on click, turn the camera when it moves ----------
+    const overlay = document.getElementById('overlay');
+    const isLocked = () => document.pointerLockElement === document.body;
+    overlay.addEventListener('click', () => {
+      sound.initAudio();   // browsers only allow sound after a click or key press
+      const request = document.body.requestPointerLock();
+      if (request && request.catch) request.catch(() => {});   // ignore "mouse capture refused" (e.g. clicking too fast after Esc)
+    });
+    document.addEventListener('pointerlockchange', () => {
+      overlay.classList.toggle('hidden', isLocked());
+      if (!isLocked()) keys.clear();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isLocked()) return;
+      const turn = e.movementX * MOUSE_SENSITIVITY;
+      view.yaw -= turn;
+      inputYaw -= turn;   // when you steer with the mouse, "forward" turns with it
+      view.pitch += e.movementY * MOUSE_SENSITIVITY;
+      view.pitch = Math.max(-0.3, Math.min(1.2, view.pitch));   // don't go under the ground or flip over
+      if (turn !== 0) mouseIdle = 0;
+    });
+    document.addEventListener('mousedown', () => {
+      sound.initAudio();
+      if (isLocked()) useDoor();
+    });
+    window.addEventListener('wheel', (e) => {
+      view.distance = Math.max(2.5, Math.min(10, view.distance + e.deltaY * 0.003));
+    });
+
+    // ---------- Keyboard ----------
+    const keys = new Set();
+    window.addEventListener('keydown', (e) => {
+      sound.initAudio();
+      keys.add(e.code);
+      if (e.code === 'Space') e.preventDefault();  // stop the page from scrolling
+      if (e.code === 'KeyE' && isLocked()) useDoor();
+      if (e.code === 'KeyM' && !e.repeat) minimap.toggleBig();
+      if (e.code === 'KeyN' && !e.repeat) soundOff = sound.toggleMute();
+    });
+    window.addEventListener('keyup', (e) => keys.delete(e.code));
+    const MOVE_KEYS = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight'];
+
+    // ---------- Collision helpers ----------
+    // The player is treated as a box: PLAYER_RADIUS wide on each side, PLAYER_HEIGHT tall.
+    const playerBox = new THREE.Box3();
+    function updatePlayerBox() {
+      playerBox.min.set(player.pos.x - PLAYER_RADIUS, player.pos.y, player.pos.z - PLAYER_RADIUS);
+      playerBox.max.set(player.pos.x + PLAYER_RADIUS, player.pos.y + PLAYER_HEIGHT, player.pos.z + PLAYER_RADIUS);
+    }
+    const touchingAnything = () => area.solids.some((b) => playerBox.intersectsBox(b));
+
+    // Move sideways along 'x' or 'z'. Low steps are climbed automatically; walls push you back.
+    // Moving one axis at a time lets the player slide along walls instead of sticking.
+    function moveFlat(axis, amount) {
+      if (amount === 0) return;
+      player.pos[axis] += amount;
+      updatePlayerBox();
+      for (const box of area.solids) {
+        if (!playerBox.intersectsBox(box)) continue;
+        const stepUp = box.max.y - player.pos.y;
+        if (player.onGround && stepUp > 0 && stepUp <= STEP_HEIGHT) {
+          const oldY = player.pos.y;
+          player.pos.y = box.max.y + 0.001;
+          updatePlayerBox();
+          if (!touchingAnything()) continue;   // climbed the step
+          player.pos.y = oldY;
+          updatePlayerBox();
+        }
+        player.pos[axis] = amount > 0 ? box.min[axis] - PLAYER_RADIUS - 0.001 : box.max[axis] + PLAYER_RADIUS + 0.001;
+        updatePlayerBox();
+      }
+    }
+
+    // Move up/down. Returns true if we hit something (landed on it, or bumped our head).
+    function moveVertical(amount) {
+      player.pos.y += amount;
+      updatePlayerBox();
+      let hit = false;
+      for (const box of area.solids) {
+        if (!playerBox.intersectsBox(box)) continue;
+        hit = true;
+        player.pos.y = amount > 0 ? box.min.y - PLAYER_HEIGHT - 0.001 : box.max.y + 0.001;
+        updatePlayerBox();
+      }
+      return hit;
+    }
+
+    // Turn smoothly from angle "from" to angle "to", always the short way round
+    function turnTowards(from, to, amount) {
+      const diff = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+      return from + diff * Math.min(1, amount);
+    }
+
+    // ---------- Game update (runs every frame while playing) ----------
+    const forward = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const wish = new THREE.Vector3();
+    let moving = false;
+    let running = false;
+    let soundOff = false;
+    let wasInWater = false;
+    const surface = () => area.surfaceAt(player.pos.x, player.pos.z, player.pos.y);
+
+    function update(dt) {
+      mouseIdle += dt;
+      running = keys.has('ShiftLeft') || keys.has('ShiftRight');
+      const speed = running ? RUN_SPEED : WALK_SPEED;
+
+      // When you press a different set of movement keys, "forward" becomes wherever the camera looks now.
+      // While you keep holding them, it stays fixed, so the camera can swing round without bending your path.
+      const held = MOVE_KEYS.filter((k) => keys.has(k)).join();
+      if (held !== lastKeys) {
+        inputYaw = view.yaw;
+        lastKeys = held;
+      }
+      forward.set(-Math.sin(inputYaw), 0, -Math.cos(inputYaw));
+      right.set(Math.cos(inputYaw), 0, -Math.sin(inputYaw));
+
+      wish.set(0, 0, 0);
+      if (!travelling) {
+        if (keys.has('KeyW') || keys.has('ArrowUp')) wish.add(forward);
+        if (keys.has('KeyS') || keys.has('ArrowDown')) wish.sub(forward);
+        if (keys.has('KeyD') || keys.has('ArrowRight')) wish.add(right);
+        if (keys.has('KeyA') || keys.has('ArrowLeft')) wish.sub(right);
+      }
+      moving = wish.lengthSq() > 0;
+      if (moving) wish.normalize().multiplyScalar(speed);
+
+      player.vel.x = wish.x;
+      player.vel.z = wish.z;
+
+      // Jumping and gravity
+      if (keys.has('Space') && player.onGround && !travelling) {
+        player.vel.y = JUMP_SPEED;
+        player.onGround = false;
+        sound.playJump();
+      }
+      const wasOnGround = player.onGround;
+      const fallSpeed = -player.vel.y;
+      player.vel.y -= GRAVITY * dt;
+
+      // Move and check walls, one direction at a time
+      moveFlat('x', player.vel.x * dt);
+      moveFlat('z', player.vel.z * dt);
+      const falling = player.vel.y < 0;
+      const hitY = moveVertical(player.vel.y * dt);
+      player.onGround = false;
+      if (hitY) {
+        if (falling) player.onGround = true;  // landed on top of something
+        player.vel.y = 0;                     // stop (either landed or bumped head)
+      }
+      if (player.pos.y <= 0) {               // standing on the floor
+        player.pos.y = 0;
+        player.vel.y = 0;
+        player.onGround = true;
+      }
+      if (player.onGround) player.groundY = player.pos.y;
+
+      // Landing and water sounds
+      const ground = surface();
+      if (player.onGround && !wasOnGround && fallSpeed > 4) sound.playLand(ground);
+      const inWater = player.onGround && ground === 'water';
+      if (inWater && !wasInWater && wasOnGround) sound.playSplash();   // walked into water (landing already splashes)
+      wasInWater = inWater;
+
+      // Turn the character to face where it is walking
+      if (moving) player.facing = turnTowards(player.facing, Math.atan2(wish.x, wish.z), dt * 12);
+
+      // Camera slowly swings round to sit behind the character while moving
+      if (moving && mouseIdle > MOUSE_PAUSE) {
+        view.yaw = turnTowards(view.yaw, player.facing + Math.PI, dt * CAMERA_FOLLOW);
+      }
+
+      // Show the "press E" prompt when standing at a door
+      nearDoor = travelling ? null : findNearDoor();
+      if (nearDoor) {
+        promptEl.innerHTML = `<b>E</b> or click — ${nearDoor.label}`;
+        promptEl.style.display = 'block';
+      } else {
+        promptEl.style.display = 'none';
+      }
+
+      hud.textContent = (!player.onGround ? 'In the air' : !moving ? 'Standing' : running ? 'Running' : 'Walking')
+        + (soundOff ? '  ·  Sound off (N)' : '');
+    }
+
+    // ---------- Camera follows behind the character ----------
+    const target = new THREE.Vector3();
+    const camDir = new THREE.Vector3();
+    const raycaster = new THREE.Raycaster();
+
+    function updateCamera() {
+      target.set(player.pos.x, player.pos.y + 1.5, player.pos.z);   // look at the character's shoulders
+      camDir.set(
+        Math.sin(view.yaw) * Math.cos(view.pitch),
+        Math.sin(view.pitch),
+        Math.cos(view.yaw) * Math.cos(view.pitch)
+      );
+
+      // If something solid is between the character and the camera, move the camera closer
+      let dist = view.distance;
+      raycaster.set(target, camDir);
+      raycaster.far = dist;
+      const hit = raycaster.intersectObjects(area.blockers, false)[0];
+      if (hit) dist = Math.max(0.6, hit.distance - 0.25);
+
+      camera.position.copy(target).addScaledVector(camDir, dist);
+      if (camera.position.y < 0.3) camera.position.y = 0.3;
+      camera.lookAt(target);
+    }
+
+    // ---------- Main loop ----------
+    const clock = new THREE.Clock();
+    let time = 0;
+    function loop() {
+      // dt = seconds since last frame. Capped so a slow frame can't push us through a wall.
+      const dt = Math.min(clock.getDelta(), 0.05);
+      time += dt;
+      if (isLocked()) update(dt);
+      else { moving = false; promptEl.style.display = 'none'; }
+      if (area.update) area.update(dt, time);
+      updateCamera();
+      const { stepped } = character.update({
+        pos: player.pos, facing: player.facing, camera, dt,
+        moving, running, onGround: player.onGround || player.pos.y === 0, groundY: player.groundY,
+      });
+      if (stepped) sound.playStep(surface(), running);
+      minimap.update(
+        area === areas.outdoor ? { x: player.pos.x, z: player.pos.z, facing: player.facing } : { inside: area.mapSpot },
+        time
+      );
+      renderer.render(area.scene, camera);
+      requestAnimationFrame(loop);
+    }
+
+    updatePlayerBox();
+    hud.textContent = 'Standing';
+    loop();
+
+    // Handy for testing from the browser console, e.g. cityWalker.enterArea({ area: 'dojo', pos: [0, 0, 3], facing: Math.PI })
+    window.cityWalker = { player, areas, enterArea, view };
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
