@@ -41,7 +41,7 @@ The original visuals (terrain, sky, clouds, trees, jet) came from the user's old
 - Models are scaled down (`mesh.scale`), so the plane looks small and more of the scenery is visible.
 
 ### Camera
-Placed `camera.distance` behind the plane (per plane type) along the aim/look direction and `camera.height` above, always with world-up (level horizon), never below the ground. Holding right mouse adds a look offset that slides back when released. Field of view widens a little with speed (62°–72°).
+The camera's direction (`camAngles`) follows aim + look smoothly (`CAMERA_SMOOTH`, short way round for yaw), so it never jumps — e.g. at lift-off, when the aim changes from "along the runway" to "climb" (this used to be a visible cut). `reset()` snaps it. Placed `camera.distance` behind the plane (per plane type) along that direction and `camera.height` above, always with world-up (level horizon), never below the ground. Holding right mouse adds a look offset that slides back when released. Field of view widens a little with speed (62°–72°).
 
 ### World
 - **Main island**: centred at (0, 0), size `MAIN_R` = 2700 m, peaks ~440 m with snow. Terrain mesh 7400 m square, 320 grid squares.

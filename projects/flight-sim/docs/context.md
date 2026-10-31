@@ -40,6 +40,9 @@ The original had combat (enemy drones, guns, missiles, radar, health, touch cont
 - User wants a calm sightseeing feel, not rushing. Keep graphics simple (low-poly + pixel characters), focus on gameplay.
 - Work step by step: user tests each version, then gives the next list.
 
+### After merge (PR pixel-arcade-lab/playground#1, merged 2026-10-31)
+- User saw a "scene cut" at take-off: the camera jumped ~4 m when the aim switched to climb. Fixed with smooth camera turning (`CAMERA_SMOOTH`); biggest per-frame extra camera move at lift-off is now 0.13 m. Not committed yet.
+
 ## Open points / ideas
 - The runway is far from the village (~3.5 km); the ring course visits the village later.
 - Ring positions are hand-picked for the current terrain; recheck if the terrain or runway search changes.
