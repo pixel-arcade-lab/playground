@@ -9,6 +9,7 @@ Small browser games and experiments, built step by step.
 | Project | What it is |
 |---|---|
 | [City Walker — Kyoto](projects/city-walker/) | A third-person walk around a pixel-art Kyoto school, with rooms to enter, sound effects and a map. Built with [Three.js](https://threejs.org/). |
+| [Sky Strike — Flight](projects/flight-sim/) | Fly a jet over a mountain island with simple mouse-aim controls: point where you want to go and the plane flies there. |
 
 ## Run it on your own computer
 
