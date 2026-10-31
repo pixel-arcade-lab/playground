@@ -130,6 +130,7 @@
 
     // ---------- Settings ----------
     const MOUSE_SENSITIVITY = 0.0022;   // how far the aim moves per pixel of mouse movement
+    const CAMERA_SMOOTH = 5;            // how fast the camera turns to follow the aim (higher = quicker, less smooth)
     const RUNWAY_HEADING = Math.atan2(-RUNWAY.dir.x, -RUNWAY.dir.z);   // the take-off direction as an angle
 
     const $ = (id) => document.getElementById(id);
@@ -249,6 +250,7 @@
       flight.reset(new THREE.Vector3(x, groundAt(x, z) + model.gearHeight, z), RUNWAY_HEADING, true);
       aim.yaw = RUNWAY_HEADING; aim.pitch = -0.06;
       look.yaw = 0; look.pitch = 0;
+      camAngles.yaw = aim.yaw; camAngles.pitch = aim.pitch;
       boost = false;
       model.mesh.visible = true;
       model.setGear(true);
@@ -410,6 +412,7 @@
     // ---------- Camera ----------
     const camDir = new THREE.Vector3();
     const lookTarget = new THREE.Vector3();
+    const camAngles = { yaw: 0, pitch: 0 };   // the direction the camera looks along (follows the aim smoothly)
     function updateCamera(dt) {
       // When the right button is released, the camera slides back behind the plane
       if (!looking) {
@@ -417,7 +420,14 @@
         look.yaw -= look.yaw * k;
         look.pitch -= look.pitch * k;
       }
-      dirFrom(aim.yaw + look.yaw, clamp(aim.pitch + look.pitch, -1.4, 1.4), camDir);
+      // The camera turns smoothly toward the aim (plus look-around), so it never jumps,
+      // e.g. when the aim changes from "along the runway" to "climb" at lift-off
+      const k = 1 - Math.exp(-CAMERA_SMOOTH * dt);
+      let dYaw = aim.yaw + look.yaw - camAngles.yaw;
+      dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));   // the short way round
+      camAngles.yaw += dYaw * k;
+      camAngles.pitch += (clamp(aim.pitch + look.pitch, -1.4, 1.4) - camAngles.pitch) * k;
+      dirFrom(camAngles.yaw, camAngles.pitch, camDir);
       // Camera sits behind the plane, along the direction you are looking, and keeps the horizon level
       const cam = PLANE_TYPES[planeId].camera;
       camera.position.copy(S.pos).addScaledVector(camDir, -cam.distance);
