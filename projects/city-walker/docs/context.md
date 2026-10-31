@@ -3,7 +3,7 @@
 Where the project stands, what was decided and why. Read this with `architecture.md` before continuing work.
 
 ## Current state (2026-10-31)
-- Live: https://kartik-823.github.io/playground/projects/city-walker/
+- Live: https://pixel-arcade-lab.github.io/playground/projects/city-walker/
 - Working and tested: walking/running/jumping, third-person auto camera, pixel-art character with 8-frame walk/run, Kyoto map, 5 indoor areas with door prompts (E or click) and fade, footstep and door sounds, small + big map.
 
 ## How it got here (versions)

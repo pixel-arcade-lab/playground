@@ -3,6 +3,7 @@
 Where the project stands, what was decided and why. Read this with `architecture.md` before continuing work.
 
 ## Current state (2026-10-31)
+- Live: https://pixel-arcade-lab.github.io/playground/projects/flight-sim/.
 - **Version 1 done**: free flight with mouse-aim controls over the island. Tested with simulated mouse input:
   - 90° turn: banks, turns in ~2 s, levels wings and holds heading.
   - Aim up: climbs at the aimed angle.
