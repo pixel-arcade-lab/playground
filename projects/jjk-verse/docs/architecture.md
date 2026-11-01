@@ -49,9 +49,14 @@ Run locally from the repo root: `python -m http.server 8000`, then open http://l
 Run 125 px/s with acceleration/deceleration; jump 390 px/s (~4 tiles); letting go early cuts the rise (short hop ~1.7 tiles); coyote time 0.1 s; jump buffer 0.12 s; max fall 430. Dash 330 px/s for 0.2 s (~4 tiles), no gravity, one per air time, cooldown 0.5 s, can't be hurt while dashing, purple afterimages.
 
 ### Combat (`COMBAT`)
-- **Punch (J)**: 3-hit combo. The next punch can start 0.1 s into a punch or within 0.3 s after it. Damage 1, 1, 2. Hit box 20 px in front. Light hits (1, 2) only nudge the curse so the combo keeps connecting (this was a bug in testing: big knock-back made punches 2 and 3 miss); the 3rd punch throws it.
-- **Black Flash**: when punch 2 hits, a red/black star cue appears on the fist 0.12 s later for 0.16 s (with a tick sound). Punching during it → 5 damage, red flash, shake, 0.12 s hit-stop, +30 energy, "BLACK FLASH!".
-- **Delayed punch (K)**: costs 25 energy; 1 damage now, then a purple shock ring 0.4 s later for 3 more.
+- **Keys** (changed on 2026-11-01 at the user's request, were J/K/L): **Z** punch, **X** delayed punch, **C** dash.
+- **Punch (Z)**: 3-hit combo. The next punch can start 0.1 s into a punch or within 0.3 s after it. Damage 1, 1, 2. Hit box 20 px in front. Light hits (1, 2) only nudge the curse so the combo keeps connecting (this was a bug in testing: big knock-back made punches 2 and 3 miss); the 3rd punch throws it.
+- **Black Flash**: when punch 2 hits, a red/black star cue appears on the fist 0.12 s later for 0.16 s (0.26 s in the Zone), with a tick sound. Punching during it →
+  - 5 damage to the punched curse, plus a **shockwave**: every other curse within 64 px takes 3 and is thrown away;
+  - the HUD draws a full-screen black flash with red/white lightning (`level.events.emit('blackflash')` → `HudScene.blackFlashScreen()`), the camera zooms in to 2.35 and back, shakes, 0.2 s hit-stop, +30 energy, "BLACK FLASH!";
+  - **the Zone** for 5 s: +1 damage on normal punches, easier Black Flash window, pulsing red aura (`player.aura`), "ZONE" + timer bar in the HUD. Cleared on death/respawn.
+  - Added because the user felt the first Black Flash "doesn't do much".
+- **Delayed punch (X)**: costs 25 energy; 1 damage now, then a purple shock ring 0.4 s later for 3 more.
 - Energy: +8 per normal hit, +5 per curse exorcised, max 100.
 - **Hit-stop**: the physics world pauses briefly on hits (0.04 s, Black Flash 0.12 s).
 - Curses flash white when hit (v4 tint: `setTint(0xffffff).setTintMode(Phaser.TintModes.FILL)`), are stunned 0.35 s and are harmless while stunned.

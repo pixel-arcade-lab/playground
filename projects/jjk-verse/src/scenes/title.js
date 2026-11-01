@@ -24,9 +24,9 @@ export class TitleScene extends Phaser.Scene {
     const controls = [
       ['Arrows / A D', 'move'],
       ['Space / W', 'jump (hold for higher)'],
-      ['J', 'punch (3-hit combo)'],
-      ['K', 'delayed punch (uses cursed energy)'],
-      ['L', 'dash'],
+      ['Z', 'punch (3-hit combo, Black Flash)'],
+      ['X', 'delayed punch (uses cursed energy)'],
+      ['C', 'dash'],
       ['Esc', 'pause      M  sound on / off'],
     ];
     controls.forEach(([k, what], i) => {

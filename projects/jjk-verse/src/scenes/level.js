@@ -82,7 +82,7 @@ export class LevelScene extends Phaser.Scene {
     cam.startFollow(this.player, true, 0.12, 0.12);
     cam.fadeIn(400);
 
-    this.keys = this.input.keyboard.addKeys('LEFT,RIGHT,UP,DOWN,A,D,W,SPACE,J,K,L,ESC,M');
+    this.keys = this.input.keyboard.addKeys('LEFT,RIGHT,UP,DOWN,A,D,W,SPACE,Z,X,C,ESC,M');
     this.input.keyboard.on('keydown-M', () => { this.muted = sound.toggleMute(); });
 
     this.scene.launch('hud', { name: this.def.name });
@@ -162,6 +162,8 @@ export class LevelScene extends Phaser.Scene {
     p.dead = true;
     p.health = 0;
     p.attack = null;
+    p.zoneT = 0;
+    p.aura.setVisible(false);
     p.body.setAllowGravity(true);
     sound.die();
     if (cause === 'hit') {               // jump up and fall off the screen, like in old platformers

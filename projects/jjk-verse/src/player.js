@@ -34,8 +34,14 @@ export const COMBAT = {
   // seconds and stays for `bfWindow` seconds. Punch while it shows → Black Flash.
   bfDelay: 0.12,
   bfWindow: 0.16,
+  bfWindowZone: 0.26,   // easier to hit while in the Zone
   bfDamage: 5,
   bfEnergy: 30,
+  bfRadius: 64,         // the shockwave also hits every curse this close to you...
+  bfSplash: 3,          // ...for this much damage
+  // The Zone: after a Black Flash, for `zoneTime` seconds your punches do `zoneBonus` extra damage
+  zoneTime: 5,
+  zoneBonus: 1,
   // Delayed punch (K): a normal hit now, then a cursed-energy shock a moment later
   delayedCost: 25,
   delayedDamage: 3,
@@ -70,8 +76,13 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.hurtLock = 0;        // no control for a moment after being hit
     this.invuln = 0;
     this.trailT = 0;
+    this.zoneT = 0;           // seconds of the Zone left
+    this.aura = scene.add.image(x, y, 'glow_red').setDepth(19).setVisible(false);   // red glow while in the Zone
     this.play('player_idle');
   }
+
+  get inZone() { return this.zoneT > 0; }
+  bfWindowLength() { return this.inZone ? COMBAT.bfWindowZone : COMBAT.bfWindow; }
 
   // keys: the keyboard keys from the level scene. dt: seconds since last frame.
   update(dt, keys) {
@@ -83,9 +94,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     const input = (right ? 1 : 0) - (left ? 1 : 0);
     const jumpPressed = JustDown(keys.SPACE) || JustDown(keys.W) || JustDown(keys.UP);
     const jumpHeld = keys.SPACE.isDown || keys.W.isDown || keys.UP.isDown;
-    const punchPressed = JustDown(keys.J);
-    const specialPressed = JustDown(keys.K);
-    const dashPressed = JustDown(keys.L);
+    const punchPressed = JustDown(keys.Z);
+    const specialPressed = JustDown(keys.X);
+    const dashPressed = JustDown(keys.C);
     const onGround = body.blocked.down || body.touching.down;
 
     // Timers
@@ -93,6 +104,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.hurtLock = Math.max(0, this.hurtLock - dt);
     this.dashCd = Math.max(0, this.dashCd - dt);
     this.comboT = Math.max(0, this.comboT - dt);
+    this.zoneT = Math.max(0, this.zoneT - dt);
+    this.aura.setVisible(this.inZone).setPosition(this.x, this.y);
+    if (this.inZone) this.aura.setAlpha(0.45 + 0.25 * Math.sin(this.zoneT * 12)).setScale(0.8 + 0.06 * Math.sin(this.zoneT * 7));
     this.coyote = onGround ? MOVE.coyoteTime : Math.max(0, this.coyote - dt);
     this.buffer = jumpPressed ? MOVE.jumpBuffer : Math.max(0, this.buffer - dt);
     this.setAlpha(this.invuln > 0 && Math.floor(this.invuln * 12) % 2 === 0 ? 0.35 : 1);   // blink while safe
@@ -174,7 +188,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // ---------- Punching ----------
   tryPunch() {
     // Black Flash: the red spark is showing on the fist right now
-    if (this.bf && this.bf.t >= COMBAT.bfDelay && this.bf.t <= COMBAT.bfDelay + COMBAT.bfWindow) {
+    if (this.bf && this.bf.t >= COMBAT.bfDelay && this.bf.t <= COMBAT.bfDelay + this.bfWindowLength()) {
       this.bf = null;
       return this.startPunch(3, 'blackflash');
     }
@@ -216,16 +230,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (a.kind === 'blackflash') {
       for (const e of targets) { e.hurt(COMBAT.bfDamage, this.facing, 2.2); fx.blackFlash(scene, e.x, e.y); }
+      // Shockwave: every other curse nearby is hit too, thrown away from you
+      for (const e of scene.enemies.getChildren()) {
+        if (e.dead || targets.includes(e)) continue;
+        if (Phaser.Math.Distance.Between(this.x, this.y, e.x, e.y) <= COMBAT.bfRadius) {
+          e.hurt(COMBAT.bfSplash, e.x < this.x ? -1 : 1, 1.8);
+          fx.spark(scene, e.x, e.y, 1.5);
+        }
+      }
+      fx.ring(scene, this.x + this.facing * 12, this.y, 0xff2a3a, 3);
       this.gainEnergy(COMBAT.bfEnergy);
+      this.zoneT = COMBAT.zoneTime;
       sound.blackFlash();
-      scene.cameras.main.shake(160, 0.012);
-      scene.cameras.main.flash(120, 255, 30, 50);
-      scene.hitStop(0.12);
+      const cam = scene.cameras.main;
+      cam.shake(260, 0.016);
+      cam.zoomTo(2.35, 70);                                          // camera punches in...
+      scene.time.delayedCall(220, () => cam.zoomTo(2, 260));         // ...and eases back out
+      scene.hitStop(0.2);
+      scene.events.emit('blackflash');                               // the HUD draws the black-and-red screen flash
       fx.floatText(scene, this.x, this.y - 22, 'BLACK FLASH!', '#ff4a5a');
       return;
     }
 
-    const dmg = a.kind === 'delayed' ? 1 : COMBAT.damage[a.step - 1];
+    const bonus = this.inZone && a.kind === 'normal' ? COMBAT.zoneBonus : 0;
+    const dmg = (a.kind === 'delayed' ? 1 : COMBAT.damage[a.step - 1]) + bonus;
     for (const e of targets) {
       e.hurt(dmg, this.facing, a.step === 3 ? 1.6 : 0.35);
       fx.spark(scene, (fistX + e.x) / 2, fistY);
@@ -253,7 +281,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       fx.cue(this.scene, this.x + this.facing * 12, this.y - 2);
       sound.cue();
     }
-    if (this.bf.t > COMBAT.bfDelay + COMBAT.bfWindow) this.bf = null;   // missed it
+    if (this.bf.t > COMBAT.bfDelay + this.bfWindowLength()) this.bf = null;   // missed it
   }
 
   gainEnergy(n) { this.energy = Math.min(COMBAT.maxEnergy, this.energy + n); }
@@ -283,6 +311,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.body.checkCollision.none = false;
     this.setPosition(x, y).setVelocity(0, 0).setAlpha(1).setAngle(0).clearTint();
     this.invuln = 1.5;
+    this.zoneT = 0;
+    this.aura.setVisible(false);
     this.play('player_idle');
   }
 }

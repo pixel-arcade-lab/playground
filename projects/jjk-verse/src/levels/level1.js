@@ -62,7 +62,7 @@ export const LEVEL1 = {
         '################################',
       ],
       hints: [
-        { x: 1, y: 9, text: 'J: punch. Press it 3 times for a combo' },
+        { x: 1, y: 9, text: 'Z: punch. Press it 3 times for a combo' },
       ],
     },
     // D: the old school building. Spikes below, flying curses inside, a secret room on the right.
@@ -84,7 +84,7 @@ export const LEVEL1 = {
         '########################################',
       ],
       hints: [
-        { x: 0, y: 8, text: 'Climb up! K: delayed punch (uses cursed energy)' },
+        { x: 0, y: 8, text: 'Climb up! X: delayed punch (uses cursed energy)' },
       ],
     },
     // E: second checkpoint, and a gap too wide to jump: dash across
@@ -100,7 +100,7 @@ export const LEVEL1 = {
         '#############......#################',
       ],
       hints: [
-        { x: 3, y: 9, text: 'Too far to jump? Jump, then press L to dash' },
+        { x: 3, y: 9, text: 'Too far to jump? Jump, then press C to dash' },
       ],
     },
     // F: last stretch and the exit gate
@@ -119,6 +119,7 @@ export const LEVEL1 = {
       ],
       hints: [
         { x: 0, y: 7, text: 'Black Flash: after 2 hits, punch again when your fist sparks red!' },
+        { x: 0, y: 6, text: 'It hits every curse nearby and puts you in the Zone (stronger punches)' },
       ],
     },
   ],
